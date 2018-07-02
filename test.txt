@@ -1,0 +1,20 @@
+./data/thumbnails/noise/noise75.jpg,1
+./data/thumbnails/noise/noise99.jpg,1
+./data/thumbnails/noise/noise126.jpg,1
+./data/thumbnails/noise/noise34.jpeg,1
+./data/thumbnails/noise/noise110.jpg,1
+./data/thumbnails/noise/noise147.jpg,1
+./data/thumbnails/noise/noise166.jpg,1
+./data/thumbnails/noise/noise107.jpg,1
+./data/thumbnails/noise/noise53.jpeg,1
+./data/thumbnails/noise/noise114.jpg,1
+./data/thumbnails/true/pepper_1_90.jpg,0
+./data/thumbnails/true/pepper_2_2.png,0
+./data/thumbnails/true/pepper_1_152.jpeg,0
+./data/thumbnails/true/pepper_1_138.png,0
+./data/thumbnails/true/pepper_1_77.jpg,0
+./data/thumbnails/true/pepper_1_118.png,0
+./data/thumbnails/true/Image uploaded from iOS (4).jpg,0
+./data/thumbnails/true/pepper_1_13.jpg,0
+./data/thumbnails/true/pepper_1_58.jpg,0
+./data/thumbnails/true/pepper_1_100.png,0
