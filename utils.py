@@ -10,118 +10,132 @@ from numpy.random import *
 import random
 # import cv2
 
-"""global"""
-IMAGE_SIZE = 112
-INPUT_SIZE = 96
-DST_INPUT_SIZE = 56
-NUM_CLASS = 2
-NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN = 4727
+"""グローバル変数"""
+IMAGE_SIZE = 270
+INPUT_SIZE = 224
+NUM_CLASS = 39 #クラス数
+# cropsize = 242
+# framesize = 260
+# 画像は一度214~260のサイズの画像で水増し
+# モデルに入力するサイズ = 224
 
-def load_data(csv, batch_size, shuffle, distored):
-    """
-    [csv] : filepath
-    shuffle : ファイル行をランダムにとるか
-    distored : 画像の水増しを行うか
-    """
-    """
-    ●ファイルパスのリストを渡し、1行単位でデータを読み取る
-        ・tf.train.string_input_producer()
-            args : [csv]
-            Returns : Queueのインスタンス
-        ・reader.read()
-            args : Queue
-            Returns : A tuple of Tensors(key, value).A string scalar tensor
-                    key : ファイル名の何行目かという文字列
-                    value : 行のデータそのもの
-    ●読み取った内容をパースし、CSVとしてデコード（Convert CSV resodes to tensors）
-        ・tf.decode_csv
-            args : record_defaults、代表値（それぞれのカラムの扱い方を決める）
-            returns : list of Tensor objects same type as record_defaults
-            Queueが処理される度に更新される.
-        ・tf.stack
-            配列の生成。np.asaaray([x, y, z])と同様
 
-    ●label → one_hot, tf.float32
-    ●image → [IMAGE_SIZE, IMAGE_SIZE, 3], tf.float32
+def load_data(csv, batch_size, shuffle, distored, NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN):
     """
-    filename_queue = tf.train.string_input_producer(csv, shuffle=shuffle)
-    reader = tf.TextLineReader()
-    key, value = reader.read(filename_queue) #識別キー、スカラ文字列
-    filename, label = tf.decode_csv(value, record_defaults=[["path"], [1]])
+    ファイルからの入力としてQueueを用いてpipelineを構築する（大規模データの入力方法）
+    """
+    # Set a QueueRuner
+    # train -> num_epochs = None
+    # val -> num_epochs = 1, etc...
+    filename_queue = tf.train.string_input_producer(
+        string_tensor = csv, 
+        shuffle=shuffle, 
+        seed=None, 
+        num_epochs=None)
+    # Set a Reader
+    reader = tf.TextLineReader(skip_header_lines=None)
+    # Get a tuple (key, value)
+    key, value = reader.read(queue=filename_queue)
+    # Convert CSV records to tensors like record_defaults
+    filename, label = tf.decode_csv(
+        records=value, 
+        record_defaults=[['./data/thumbnails/noise/noise10.png'], [1]], 
+        field_delim=',')
 
-    # labelのcastとtensorオブジェクトの作成
+    # label -> onehot vector
     label = tf.cast(label, tf.int64)
-    label = tf.one_hot(label, depth=NUM_CLASS, on_value=1.0, off_value=0.0, axis=-1)
+    label = tf.one_hot(
+        label, 
+        depth=NUM_CLASS, 
+        on_value=1.0, 
+        off_value=0.0, 
+        axis=-1)
 
-    # imageのcastとtensorオブジェクトの作成
+    # image -> [IMAGE_SIZE, IMAGE_SIZE]
     jpeg = tf.read_file(filename)
     image = tf.image.decode_jpeg(jpeg, channels=3)
     image = tf.cast(image, tf.float32)
-
-    # image.set_shape([IMAGE_SIZE, IMAGE_SIZE, 3])
     image = tf.expand_dims(image, 0)
     image = tf.image.resize_bilinear(image, [IMAGE_SIZE, IMAGE_SIZE])
     image = tf.squeeze(image, [0])
-    # image = tf.image.resize_images(image, (IMAGE_SIZE, IMAGE_SIZE))
-
 
     # 画像の水増し
+    # ある程度のスケーリング誤差も吸収するために[crop_size, frame_size]にリサイズ
+    # 水増し操作で最終的に[input_size, input_size]にリサイズする
     if distored:
+        # 242-260の間で
         cropsize = random.randint(INPUT_SIZE, INPUT_SIZE+(IMAGE_SIZE - INPUT_SIZE)/2)
         framesize = INPUT_SIZE + (cropsize - INPUT_SIZE)*2
+
         image = tf.image.resize_image_with_crop_or_pad(image, framesize, framesize)
         image = tf.random_crop(image, [cropsize, cropsize, 3])
         image = tf.image.random_flip_left_right(image)
         image = tf.image.random_brightness(image, max_delta=63)
         image = tf.image.random_contrast(image, lower=0.2, upper=1.8)
-        # image = tf.image.random_hue(image, max_delta=0.04)
-        # image = tf.image.random_saturation(image, lower=0.6, upper=1.4)
+        image = tf.image.random_hue(image, max_delta=0.04)
+        image = tf.image.random_saturation(image, lower=0.6, upper=1.4)
 
-
-    # リサイズ
-    # image = tf.image.resize_images(image, (DST_INPUT_SIZE, DST_INPUT_SIZE))
+    # image -> [INPUT_SIZE, INPUT_SIZE]
     image = tf.expand_dims(image, 0)
-    image = tf.image.resize_bilinear(image, [DST_INPUT_SIZE, DST_INPUT_SIZE])
+    image = tf.image.resize_bilinear(image, [INPUT_SIZE, INPUT_SIZE])
     image = tf.squeeze(image, [0])
 
-    # 正規化
+    # imageを正規化
     image = tf.image.per_image_standardization(image)
 
-    # Ensure that the random shuffling has good mixing properties.
+    # Setting min_after_dequeue
     min_fraction_of_examples_in_queue = 0.4
-    min_queue_examples = int(NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN * min_fraction_of_examples_in_queue)
+    min_after_dequeue = int(
+        NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN * min_fraction_of_examples_in_queue)
 
-    return _generate_image_and_label_batch(image, label, filename, min_queue_examples, batch_size, shuffle=shuffle)
+    return _generate_image_and_label_batch(image, label, filename, min_after_dequeue, batch_size, shuffle=shuffle)
 
-def _generate_image_and_label_batch(image, label, filename, min_queue_examples, batch_size, shuffle):
-    """batchにする
-    ・tf.train.shuffle_batch
-    args :
-        tensors : the list of Tensors.[x, y, z]
-        num_threads : dequeueするためのスレッド数
-        capacity : Queue内のデータ最大数
-        min_after_dequeue : dequeue後のQueueのデータ数
-    Returns :  [batch_size, x, y, z]
+
+def _generate_image_and_label_batch(image, label, filename, min_after_dequeue, batch_size, shuffle):
     """
-    num_preprocess_threads = 16
-    capacity = min_queue_examples + 3 * batch_size
+    Creates batches by randomly shuffling tensors.
+    Args:
+        min_after_dequeue: Minimum number elements in the queue after a dequeue
+        , used to ensure a level of mixing of elements.  
+        seed: Seed for the random shuffling within the queue.  
+        enqueue_many: Whether each tensor in `tensor_list` is a single example.  
+
+    capacity > batch_size
+    """
+    # setting num_preprocess_threads
+    # The number of threads enqueuing `tensor_list`.
+    num_preprocess_threads = 1
+    # setting capacity
+    # The maximum number of elements in the queue.
+    capacity = min_after_dequeue + 3 * batch_size
+
+    # shuffle_batch(train) or batch(val)
     if shuffle:
         images, label_batch, filename = tf.train.shuffle_batch(
             tensors=[image, label, filename],
             batch_size=batch_size,
             num_threads=num_preprocess_threads,
             capacity=capacity,
-            min_after_dequeue=min_queue_examples)
+            min_after_dequeue=min_after_dequeue,
+            seed=None, 
+            enqueue_many=False,
+            allow_smaller_final_batch=True)
     else:
+        # allow_smaller_final_batch: (Optional) Boolean. 
+        # If `True`, 
+        # allow the final batch to be smaller if there are insufficient items left in the queue.
         images, label_batch, filename = tf.train.batch(
             tensors=[image, label, filename],
             batch_size=batch_size,
             num_threads=num_preprocess_threads,
-            capacity=capacity)
+            capacity=capacity,
+            allow_smaller_final_batch=True)
 
-    # tensorboard設定
-    # tf.summary.image(name='image', images, max_outputs=100)
-
+    print('INFO : batch_size:{}'.format(batch_size))
+    print('INFO : min_after_dequeue:{}'.format(min_after_dequeue))
+    print('INFO : capacity:{}'.format(capacity))
+    
+    # labels -> [batch_size, NUM_CLASS]
     labels = tf.reshape(label_batch, [batch_size, NUM_CLASS])
 
     return images, labels, filename
